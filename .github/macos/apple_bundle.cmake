@@ -4,7 +4,7 @@ set(ENTITLEMENTS_FILE ${CMAKE_SOURCE_DIR}/.github/macos/entitlements.plist)
 # Set bundle properties
 set_target_properties(Zelda64Recompiled PROPERTIES
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_BUNDLE_NAME "Zelda64Recompiled"
+        MACOSX_BUNDLE_BUNDLE_NAME "Majora's Mask"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.github.zelda64recompiled"
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
@@ -54,6 +54,19 @@ add_dependencies(Zelda64Recompiled create_icns)
 # Configure Info.plist
 configure_file(${CMAKE_SOURCE_DIR}/.github/macos/Info.plist.in ${CMAKE_BINARY_DIR}/Info.plist @ONLY)
 
+# SDL2-compat loads SDL3 dynamically, so BundleUtilities cannot discover it from
+# libSDL2's load commands. Bundle the runtime alongside the SDL2 compatibility
+# library when SDL3 is available.
+set(SDL3_POST_BUILD_COMMAND)
+find_package(SDL3 CONFIG QUIET)
+if(TARGET SDL3::SDL3-shared)
+    list(APPEND SDL3_POST_BUILD_COMMAND
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:SDL3::SDL3-shared>
+            $<TARGET_BUNDLE_DIR:Zelda64Recompiled>/Contents/Frameworks/libSDL3.dylib
+    )
+endif()
+
 # Install the app bundle
 install(TARGETS Zelda64Recompiled BUNDLE DESTINATION .)
 
@@ -66,6 +79,9 @@ endif()
 add_custom_command(TARGET Zelda64Recompiled POST_BUILD
     # Copy and fix frameworks first
     COMMAND ${CMAKE_COMMAND} -D CMAKE_BUILD_TYPE=$<CONFIG> -D CMAKE_GENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_SOURCE_DIR}/.github/macos/fixup_bundle.cmake
+
+    # SDL2-compat resolves SDL3 relative to its own location at runtime.
+    ${SDL3_POST_BUILD_COMMAND}
 
     # Copy all resources
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/assets ${CMAKE_BINARY_DIR}/temp_assets
