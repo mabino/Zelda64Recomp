@@ -1,0 +1,117 @@
+name: Upstream sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 10 * * 1'
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync-dev
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'mabino/Zelda64Recomp'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out fork
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git and fetch upstream
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/Zelda64Recomp/Zelda64Recomp.git
+          git fetch upstream dev
+          git fetch origin dev
+
+      - name: Check for safe root-level sync
+        id: inspect
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git merge-base --is-ancestor upstream/dev origin/dev; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "Fork dev already contains upstream dev."
+            exit 0
+          fi
+
+          base="$(git merge-base origin/dev upstream/dev)"
+          reason=""
+          if ! git diff --quiet "$base" upstream/dev -- .gitmodules; then
+            reason="Upstream changed .gitmodules, so fork URLs need review."
+          elif git diff --raw "$base" upstream/dev | awk '$1 == ":160000" || $2 == "160000" { found=1 } END { exit !found }'; then
+            reason="Upstream changed a submodule gitlink, so the dependency fork chain needs review."
+          fi
+
+          if [[ -n "$reason" ]]; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            echo "reason=$reason" >> "$GITHUB_OUTPUT"
+            echo "base=$base" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git switch --create automation/upstream-dev origin/dev
+          if ! git merge --no-edit --no-ff upstream/dev; then
+            git merge --abort
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            echo "reason=Upstream changes conflict with fork changes and need a manual merge." >> "$GITHUB_OUTPUT"
+            echo "base=$base" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+          echo "blocked=false" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Open review issue for manual sync
+        if: steps.inspect.outputs.needed == 'true' && steps.inspect.outputs.blocked == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REASON: ${{ steps.inspect.outputs.reason }}
+          BASE: ${{ steps.inspect.outputs.base }}
+        run: |
+          title="Upstream sync requires manual review"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --json number,title --jq '.[] | select(.title == "Upstream sync requires manual review") | .number' | head -n 1)"
+          if [[ -n "$existing" ]]; then
+            echo "An open sync issue already exists: #$existing"
+            exit 0
+          fi
+          body=$(cat <<EOF
+          The scheduled upstream sync paused and needs a human review.
+
+          **Reason:** $REASON
+
+          **Fork/upstream merge base:** $BASE
+          **Upstream tip:** https://github.com/Zelda64Recomp/Zelda64Recomp/commit/$(git rev-parse upstream/dev)
+
+          Follow the [fork maintenance guide](https://github.com/$GITHUB_REPOSITORY/blob/dev/docs/FORK_MAINTENANCE.md) to update the dependency chain or resolve the merge, then push the result to \`dev\`.
+          EOF
+          )
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+
+      - name: Push sync branch and open review pull request
+        if: steps.inspect.outputs.needed == 'true' && steps.inspect.outputs.blocked == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git push --force origin HEAD:refs/heads/automation/upstream-dev
+          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head mabino:automation/upstream-dev --json number --jq '.[0].number // empty')"
+          body="Upstream `dev` changes are merged into this automation branch for review. Check the diff, confirm fork-specific packaging remains correct, and merge when ready. No changes have been published to upstream. See [fork maintenance](docs/FORK_MAINTENANCE.md)."
+          if [[ -n "$existing" ]]; then
+            gh pr edit "$existing" --repo "$GITHUB_REPOSITORY" --title "Sync upstream dev" --body "$body"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --base dev --head automation/upstream-dev --title "Sync upstream dev" --body "$body"
+          fi

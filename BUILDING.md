@@ -1,5 +1,7 @@
 # Building Guide
 
+If you maintain a personal fork and want to keep it aligned with upstream, see the [fork maintenance guide](docs/FORK_MAINTENANCE.md).
+
 This guide will help you build the project on your local machine. The process will require you to provide a decompressed ROM of the US version of the game.
 
 These steps cover: decompressing the ROM, running the recompiler and finally building the project.
