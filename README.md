@@ -138,7 +138,16 @@ Yes, if you place a file named `portable.txt` in the same folder as the executab
 * Overlays such as MSI Afterburner and other software such as Wallpaper Engine can cause performance issues with this project that prevent the game from rendering correctly. Disabling such software is recommended.
 
 ## Building
-Building is not required to play this project, as prebuilt binaries (which do not contain game assets) can be found in the [Releases](https://github.com/Mr-Wiseguy/Zelda64Recomp/releases) section. Instructions on how to build this project can be found in the [BUILDING.md](BUILDING.md) file.
+
+Prebuilt versions are available from [Releases](https://github.com/Mr-Wiseguy/Zelda64Recomp/releases). To build on macOS, clone this fork with its submodules and provide a North American Rev 1 ROM dump from your own copy:
+
+```sh
+git clone --recurse-submodules https://github.com/mabino/Zelda64Recomp.git
+cd Zelda64Recomp
+./.github/macos/build_local.sh "/path/to/your/Majora's Mask ROM.z64"
+```
+
+See [Building and packaging on macOS](docs/BUILDING_MACOS.md) for dependencies and outputs, or [BUILDING.md](BUILDING.md) for other platforms.
 
 ## Libraries Used, Projects Referenced and Special Thanks
 * [RT64](https://github.com/rt64/rt64) for the project's rendering engine
