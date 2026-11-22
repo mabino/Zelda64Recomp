@@ -6,6 +6,8 @@ This guide will help you build the project on your local machine. The process wi
 
 These steps cover: decompressing the ROM, running the recompiler and finally building the project.
 
+For the complete local macOS build and packaging procedure, including the ROM helper script, see [Building and packaging on macOS](docs/BUILDING_MACOS.md).
+
 ## 1. Clone the Zelda64Recomp Repository
 This project makes use of submodules so you will need to clone the repository with the `--recurse-submodules` flag.
 
