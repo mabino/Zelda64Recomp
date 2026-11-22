@@ -341,8 +341,11 @@ public:
 
     void show_context(recompui::ContextId context) {
         if (std::find_if(shown_contexts.begin(), shown_contexts.end(), [context](auto& c){ return c.context == context; }) != shown_contexts.end()) {
-            recompui::message_box("Attemped to show the same context twice");
-            assert(false);
+            // Context actions can be dispatched by RT64's present thread. Do not
+            // show a blocking SDL/AppKit dialog from here if a context is opened
+            // twice; treat the request as an idempotent no-op instead.
+            printf("[WARN] Ignoring request to show an already visible UI context\n");
+            return;
         }
         Rml::ElementDocument* document = context.get_document();
         shown_contexts.push_back(ContextDetails{
@@ -368,8 +371,10 @@ public:
     void hide_context(recompui::ContextId context) {
         auto remove_it = std::remove_if(shown_contexts.begin(), shown_contexts.end(), [context](auto& c) { return c.context == context; });
         if (remove_it == shown_contexts.end()) {
-            recompui::message_box("Attemped to hide a context that isn't shown");
-            assert(false);
+            // Match show_context's idempotent behavior and avoid showing a
+            // platform dialog from whichever thread dispatched the UI action.
+            printf("[WARN] Ignoring request to hide a UI context that is not visible\n");
+            return;
         }
         shown_contexts.erase(remove_it, shown_contexts.end());
 
@@ -798,6 +803,13 @@ void recompui::message_box(const char* msg) {
 }
 
 void recompui::show_context(ContextId context, std::string_view param) {
+    // Native menu commands and RmlUi callbacks can request the same context
+    // close together. Check before changing the thread-local ContextId scope so
+    // an already visible context remains untouched.
+    if (recompui::is_context_shown(context)) {
+        return;
+    }
+
     ContextId prev_context = recompui::try_close_current_context();
     {
         std::lock_guard lock{ ui_state_mutex };

@@ -2,6 +2,7 @@
 #define __RECOMP_UI__
 
 #include <memory>
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <list>
@@ -21,6 +22,11 @@ namespace Rml {
     class EventListenerInstancer;
     class Context;
     class Event;
+}
+
+namespace recomp {
+    enum class GameInput;
+    enum class InputDevice;
 }
 
 namespace recompui {
@@ -47,6 +53,7 @@ namespace recompui {
     void register_event(UiEventListenerInstancer& listener, const std::string& name, event_handler_t* handler);
 
     void show_context(ContextId context, std::string_view param);
+    void start_control_binding_scan(recomp::GameInput input, size_t binding_index, recomp::InputDevice device);
     void hide_context(ContextId context);
     void hide_all_contexts();
     bool is_context_shown(ContextId context);

@@ -1,10 +1,14 @@
 #include "recomp_ui.h"
 #include "recomp_input.h"
+#include "recomp_controls.hpp"
 #include "zelda_sound.h"
 #include "zelda_config.h"
 #include "zelda_debug.h"
 #include "zelda_render.h"
 #include "zelda_support.h"
+#ifdef __APPLE__
+#include "macos_settings.h"
+#endif
 #include "promptfont.h"
 #include "ultramodern/config.hpp"
 #include "ultramodern/ultramodern.hpp"
@@ -91,8 +95,7 @@ void bind_atomic(Rml::DataModelConstructor& constructor, Rml::DataModelHandle ha
     );
 }
 
-static int scanned_binding_index = -1;
-static int scanned_input_index = -1;
+static recomp::controls::BindingScanTarget active_binding_scan;
 static int focused_input_index = -1;
 static int focused_config_option_index = -1;
 
@@ -106,31 +109,45 @@ static bool cont_active = true;
 static recomp::InputDevice cur_device = recomp::InputDevice::Controller;
 
 int recomp::get_scanned_input_index() {
-    return scanned_input_index;
+    return active_binding_scan.active() ? static_cast<int>(active_binding_scan.input) : -1;
 }
 
 void recomp::finish_scanning_input(recomp::InputField scanned_field) {
-    recomp::set_input_binding(static_cast<recomp::GameInput>(scanned_input_index), scanned_binding_index, cur_device, scanned_field);
-    scanned_input_index = -1;
-    scanned_binding_index = -1;
+    const auto target = active_binding_scan.take();
+    if (!target) return;
+    recomp::set_input_binding(target->input, target->binding_index, target->device, scanned_field);
     controls_model_handle.DirtyVariable("inputs");
     controls_model_handle.DirtyVariable("active_binding_input");
     controls_model_handle.DirtyVariable("active_binding_slot");
     nav_help_model_handle.DirtyVariable("nav_help__accept");
     nav_help_model_handle.DirtyVariable("nav_help__exit");
     graphics_model_handle.DirtyVariable("gfx_help__apply");
+    zelda64::save_config();
+#ifdef __APPLE__
+    zelda64::refresh_macos_controls();
+    zelda64::complete_macos_control_binding_scan();
+#endif
 }
 
 void recomp::cancel_scanning_input() {
     recomp::stop_scanning_input();
-    scanned_input_index = -1;
-    scanned_binding_index = -1;
+    active_binding_scan.reset();
     controls_model_handle.DirtyVariable("inputs");
     controls_model_handle.DirtyVariable("active_binding_input");
     controls_model_handle.DirtyVariable("active_binding_slot");
     nav_help_model_handle.DirtyVariable("nav_help__accept");
     nav_help_model_handle.DirtyVariable("nav_help__exit");
     graphics_model_handle.DirtyVariable("gfx_help__apply");
+#ifdef __APPLE__
+    zelda64::refresh_macos_controls();
+    zelda64::complete_macos_control_binding_scan();
+#endif
+}
+
+void recompui::start_control_binding_scan(recomp::GameInput input, size_t binding_index, recomp::InputDevice device) {
+    if (!active_binding_scan.begin(input, binding_index, device, recomp::get_num_inputs())) return;
+    cur_device = device;
+    recomp::start_scanning_input(device);
 }
 
 void recomp::config_menu_set_cont_or_kb(bool cont_interacted) {
@@ -253,6 +270,9 @@ void recomp::set_rumble_strength(int strength) {
     if (general_model_handle) {
         general_model_handle.DirtyVariable("rumble_strength");
     }
+#ifdef __APPLE__
+    zelda64::refresh_macos_settings();
+#endif
 }
 
 int recomp::get_gyro_sensitivity() {
@@ -272,6 +292,9 @@ void recomp::set_gyro_sensitivity(int sensitivity) {
     if (general_model_handle) {
         general_model_handle.DirtyVariable("gyro_sensitivity");
     }
+#ifdef __APPLE__
+    zelda64::refresh_macos_settings();
+#endif
 }
 
 void recomp::set_mouse_sensitivity(int sensitivity) {
@@ -279,6 +302,9 @@ void recomp::set_mouse_sensitivity(int sensitivity) {
     if (general_model_handle) {
         general_model_handle.DirtyVariable("mouse_sensitivity");
     }
+#ifdef __APPLE__
+    zelda64::refresh_macos_settings();
+#endif
 }
 
 void recomp::set_joystick_deadzone(int deadzone) {
@@ -286,6 +312,9 @@ void recomp::set_joystick_deadzone(int deadzone) {
     if (general_model_handle) {
         general_model_handle.DirtyVariable("joystick_deadzone");
     }
+#ifdef __APPLE__
+    zelda64::refresh_macos_settings();
+#endif
 }
 
 zelda64::TargetingMode zelda64::get_targeting_mode() {
@@ -325,6 +354,9 @@ void zelda64::set_autosave_mode(zelda64::AutosaveMode mode) {
     if (general_model_handle) {
         general_model_handle.DirtyVariable("autosave_mode");
     }
+#ifdef __APPLE__
+    zelda64::refresh_macos_settings();
+#endif
 }
 
 zelda64::CameraInvertMode zelda64::get_camera_invert_mode() {
@@ -388,6 +420,9 @@ void zelda64::set_main_volume(int volume) {
     if (sound_options_model_handle) {
         sound_options_model_handle.DirtyVariable("main_volume");
     }
+#ifdef __APPLE__
+    zelda64::refresh_macos_settings();
+#endif
 }
 
 int zelda64::get_main_volume() {
@@ -399,6 +434,9 @@ void zelda64::set_bgm_volume(int volume) {
     if (sound_options_model_handle) {
         sound_options_model_handle.DirtyVariable("bgm_volume");
     }
+#ifdef __APPLE__
+    zelda64::refresh_macos_settings();
+#endif
 }
 
 int zelda64::get_bgm_volume() {
@@ -410,6 +448,9 @@ void zelda64::set_low_health_beeps_enabled(bool enabled) {
     if (sound_options_model_handle) {
         sound_options_model_handle.DirtyVariable("low_health_beeps_enabled");
     }
+#ifdef __APPLE__
+    zelda64::refresh_macos_settings();
+#endif
 }
 
 bool zelda64::get_low_health_beeps_enabled() {
@@ -722,9 +763,9 @@ public:
 
         constructor.BindEventCallback("set_input_binding",
             [](Rml::DataModelHandle model_handle, Rml::Event& event, const Rml::VariantList& inputs) {
-                scanned_input_index = inputs.at(0).Get<size_t>();
-                scanned_binding_index = inputs.at(1).Get<size_t>();
-                recomp::start_scanning_input(cur_device);
+                recompui::start_control_binding_scan(
+                    static_cast<recomp::GameInput>(inputs.at(0).Get<size_t>()),
+                    inputs.at(1).Get<size_t>(), cur_device);
                 model_handle.DirtyVariable("active_binding_input");
                 model_handle.DirtyVariable("active_binding_slot");
             });
@@ -854,15 +895,17 @@ public:
         });
 
         constructor.BindFunc("active_binding_input", [](Rml::Variant& out) {
-            if (scanned_input_index == -1) {
+            if (recomp::get_scanned_input_index() == -1) {
                 out = "NONE";
             }
             else {
-                out = recomp::get_input_enum_name(static_cast<recomp::GameInput>(scanned_input_index));
+                out = recomp::get_input_enum_name(static_cast<recomp::GameInput>(recomp::get_scanned_input_index()));
             }
         });
 
-        constructor.Bind<int>("active_binding_slot", &scanned_binding_index);
+        constructor.BindFunc("active_binding_slot", [](Rml::Variant& out) {
+            out = active_binding_scan.active() ? static_cast<int>(active_binding_scan.binding_index) : -1;
+        });
 
         controls_model_handle = constructor.GetModelHandle();
     }
@@ -912,10 +955,18 @@ public:
 
         bind_config_list_events(constructor);
         
-        constructor.Bind("rumble_strength", &control_options_context.rumble_strength);
-        constructor.Bind("gyro_sensitivity", &control_options_context.gyro_sensitivity);
-        constructor.Bind("mouse_sensitivity", &control_options_context.mouse_sensitivity);
-        constructor.Bind("joystick_deadzone", &control_options_context.joystick_deadzone);
+        constructor.BindFunc("rumble_strength",
+            [](Rml::Variant& out) { out = recomp::get_rumble_strength(); },
+            [](const Rml::Variant& in) { recomp::set_rumble_strength(in.Get<int>()); });
+        constructor.BindFunc("gyro_sensitivity",
+            [](Rml::Variant& out) { out = recomp::get_gyro_sensitivity(); },
+            [](const Rml::Variant& in) { recomp::set_gyro_sensitivity(in.Get<int>()); });
+        constructor.BindFunc("mouse_sensitivity",
+            [](Rml::Variant& out) { out = recomp::get_mouse_sensitivity(); },
+            [](const Rml::Variant& in) { recomp::set_mouse_sensitivity(in.Get<int>()); });
+        constructor.BindFunc("joystick_deadzone",
+            [](Rml::Variant& out) { out = recomp::get_joystick_deadzone(); },
+            [](const Rml::Variant& in) { recomp::set_joystick_deadzone(in.Get<int>()); });
         bind_option(constructor, "targeting_mode", &control_options_context.targeting_mode);
         bind_option(constructor, "background_input_mode", &control_options_context.background_input_mode);
         bind_option(constructor, "autosave_mode", &control_options_context.autosave_mode);
@@ -936,9 +987,15 @@ public:
         
         sound_options_model_handle = constructor.GetModelHandle();
 
-        bind_atomic(constructor, sound_options_model_handle, "main_volume", &sound_options_context.main_volume);
-        bind_atomic(constructor, sound_options_model_handle, "bgm_volume", &sound_options_context.bgm_volume);
-        bind_atomic(constructor, sound_options_model_handle, "low_health_beeps_enabled", &sound_options_context.low_health_beeps_enabled);
+        constructor.BindFunc("main_volume",
+            [](Rml::Variant& out) { out = zelda64::get_main_volume(); },
+            [](const Rml::Variant& in) { zelda64::set_main_volume(in.Get<int>()); });
+        constructor.BindFunc("bgm_volume",
+            [](Rml::Variant& out) { out = zelda64::get_bgm_volume(); },
+            [](const Rml::Variant& in) { zelda64::set_bgm_volume(in.Get<int>()); });
+        constructor.BindFunc("low_health_beeps_enabled",
+            [](Rml::Variant& out) { out = (int)zelda64::get_low_health_beeps_enabled(); },
+            [](const Rml::Variant& in) { zelda64::set_low_health_beeps_enabled(in.Get<int>() != 0); });
     }
 
     void make_debug_bindings(Rml::Context* context) {

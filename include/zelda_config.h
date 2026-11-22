@@ -13,6 +13,9 @@ namespace zelda64 {
     // TODO: Move loading configs to the runtime once we have a way to allow per-project customization.
     void load_config();
     void save_config();
+    void reset_general_and_sound_settings();
+    bool get_confirm_before_quit();
+    void set_confirm_before_quit(bool enabled);
     
     void reset_input_bindings();
     void reset_cont_input_bindings();

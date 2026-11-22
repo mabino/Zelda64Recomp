@@ -52,6 +52,17 @@ An alternate build directory can be supplied as the second argument:
 
 Open the `.dmg` and drag `Zelda64Recompiled.app` to Applications. The app is ad hoc signed for local use and is not notarized; macOS may require Control-click > Open the first time. Distribution signing and notarization require the publisher's Apple Developer credentials. At first launch, select your normal retail ROM in the app. The generated decompressed ROM is a build input only.
 
+## Run settings tests
+
+After configuring the project with CMake, build and run the settings tests with:
+
+```sh
+cmake --build build-arm64 --target Zelda64SettingsTests
+ctest --test-dir build-arm64 --output-on-failure
+```
+
+Replace `build-arm64` with the CMake build directory you configured. The tests cover control scan state, control mapping defaults and JSON persistence, and the quit-confirmation preference.
+
 ## Troubleshooting
 
 - If the helper reports a checksum error, verify that the dump is the unmodified North American revision 1 ROM. Byte-swapped `.n64` and `.v64` dumps are accepted.

@@ -33,6 +33,9 @@
 #include "zelda_sound.h"
 #include "zelda_render.h"
 #include "zelda_support.h"
+#ifdef __APPLE__
+#include "macos_settings.h"
+#endif
 #include "zelda_game.h"
 #include "recomp_data.h"
 #include "ovl_patches.hpp"
@@ -78,6 +81,10 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) > 0) {
         exit_error("Failed to initialize SDL2: %s\n", SDL_GetError());
     }
+
+#ifdef __APPLE__
+    zelda64::initialize_macos_settings();
+#endif
 
     fprintf(stdout, "SDL Video Driver: %s\n", SDL_GetCurrentVideoDriver());
 

@@ -1,5 +1,7 @@
 #include "zelda_config.h"
 #include "recomp_input.h"
+#include "recomp_controls.hpp"
+#include "zelda_app_preferences.hpp"
 #include "zelda_sound.h"
 #include "zelda_render.h"
 #include "zelda_support.h"
@@ -35,6 +37,7 @@ constexpr int rr_manual_default       = 60;
 constexpr bool developer_mode_default = false;
 
 static bool is_steam_deck = false;
+static bool confirm_before_quit = zelda64::confirm_before_quit_default;
 
 ultramodern::renderer::WindowMode wm_default() {
     return is_steam_deck ? ultramodern::renderer::WindowMode::Fullscreen : ultramodern::renderer::WindowMode::Windowed;
@@ -117,17 +120,6 @@ namespace ultramodern {
         config.hpfb_option      = from_or_default(j, "hpfb_option",     hpfb_default);
         config.rr_manual_value  = from_or_default(j, "rr_manual_value", rr_manual_default);
         config.developer_mode   = from_or_default(j, "developer_mode",  developer_mode_default);
-    }
-}
-
-namespace recomp {
-    void to_json(json& j, const InputField& field) {
-        j = json{ {"input_type", field.input_type}, {"input_id", field.input_id} };
-    }
-
-    void from_json(const json& j, InputField& field) {
-        j.at("input_type").get_to(field.input_type);
-        j.at("input_id").get_to(field.input_id);
     }
 }
 
@@ -242,6 +234,7 @@ bool save_general_config(const std::filesystem::path& path) {
     config_json["analog_cam_mode"] = zelda64::get_analog_cam_mode();
     config_json["analog_camera_invert_mode"] = zelda64::get_analog_camera_invert_mode();
     config_json["debug_mode"] = zelda64::get_debug_mode_enabled();
+    zelda64::save_confirm_before_quit(config_json, zelda64::get_confirm_before_quit());
 
     return save_json_with_backups(path, config_json);
 }
@@ -258,6 +251,15 @@ void set_general_settings_from_json(const nlohmann::json& config_json) {
     zelda64::set_analog_cam_mode(from_or_default(config_json, "analog_cam_mode", zelda64::AnalogCamMode::Off));
     zelda64::set_analog_camera_invert_mode(from_or_default(config_json, "analog_camera_invert_mode", zelda64::CameraInvertMode::InvertNone));
     zelda64::set_debug_mode_enabled(from_or_default(config_json, "debug_mode", false));
+    zelda64::set_confirm_before_quit(zelda64::load_confirm_before_quit(config_json));
+}
+
+bool zelda64::get_confirm_before_quit() {
+    return confirm_before_quit;
+}
+
+void zelda64::set_confirm_before_quit(bool enabled) {
+    confirm_before_quit = enabled;
 }
 
 bool load_general_config(const std::filesystem::path& path) {
@@ -270,47 +272,19 @@ bool load_general_config(const std::filesystem::path& path) {
     return true;
 }
 
-void assign_mapping(recomp::InputDevice device, recomp::GameInput input, const std::vector<recomp::InputField>& value) {
-    for (size_t binding_index = 0; binding_index < std::min(value.size(), recomp::bindings_per_input); binding_index++) {
-        recomp::set_input_binding(input, binding_index, device, value[binding_index]);
-    }
-};
-
 // same as assign_mapping, except will clear unassigned bindings if not in value
 void assign_mapping_complete(recomp::InputDevice device, recomp::GameInput input, const std::vector<recomp::InputField>& value) {
-    for (size_t binding_index = 0; binding_index < recomp::bindings_per_input; binding_index++) {
-        if (binding_index >= value.size()) {
-            recomp::set_input_binding(input, binding_index, device, recomp::InputField{});
-        } else {
-            recomp::set_input_binding(input, binding_index, device, value[binding_index]);
-        }
-    }
+    recomp::controls::assign_mapping_complete(device, input, value,
+        [](recomp::GameInput target, size_t slot, recomp::InputDevice target_device, recomp::InputField field) {
+            recomp::set_input_binding(target, slot, target_device, field);
+        });
 };
 
 void assign_all_mappings(recomp::InputDevice device, const recomp::DefaultN64Mappings& values) {
-    assign_mapping_complete(device, recomp::GameInput::A, values.a);
-    assign_mapping_complete(device, recomp::GameInput::B, values.b);
-    assign_mapping_complete(device, recomp::GameInput::Z, values.z);
-    assign_mapping_complete(device, recomp::GameInput::START, values.start);
-    assign_mapping_complete(device, recomp::GameInput::DPAD_UP, values.dpad_up);
-    assign_mapping_complete(device, recomp::GameInput::DPAD_DOWN, values.dpad_down);
-    assign_mapping_complete(device, recomp::GameInput::DPAD_LEFT, values.dpad_left);
-    assign_mapping_complete(device, recomp::GameInput::DPAD_RIGHT, values.dpad_right);
-    assign_mapping_complete(device, recomp::GameInput::L, values.l);
-    assign_mapping_complete(device, recomp::GameInput::R, values.r);
-    assign_mapping_complete(device, recomp::GameInput::C_UP, values.c_up);
-    assign_mapping_complete(device, recomp::GameInput::C_DOWN, values.c_down);
-    assign_mapping_complete(device, recomp::GameInput::C_LEFT, values.c_left);
-    assign_mapping_complete(device, recomp::GameInput::C_RIGHT, values.c_right);
-
-    assign_mapping_complete(device, recomp::GameInput::X_AXIS_NEG, values.analog_left);
-    assign_mapping_complete(device, recomp::GameInput::X_AXIS_POS, values.analog_right);
-    assign_mapping_complete(device, recomp::GameInput::Y_AXIS_NEG, values.analog_down);
-    assign_mapping_complete(device, recomp::GameInput::Y_AXIS_POS, values.analog_up);
-
-    assign_mapping_complete(device, recomp::GameInput::TOGGLE_MENU, values.toggle_menu);
-    assign_mapping_complete(device, recomp::GameInput::ACCEPT_MENU, values.accept_menu);
-    assign_mapping_complete(device, recomp::GameInput::APPLY_MENU, values.apply_menu);
+    recomp::controls::reset_device_bindings(device, values, recomp::get_num_inputs(),
+        [](recomp::GameInput input, size_t slot, recomp::InputDevice target_device, recomp::InputField field) {
+            recomp::set_input_binding(input, slot, target_device, field);
+        });
 };
 
 void zelda64::reset_input_bindings() {
@@ -372,70 +346,36 @@ bool load_graphics_config(const std::filesystem::path& path) {
     return true;
 }
 
-void add_input_bindings(nlohmann::json& out, recomp::GameInput input, recomp::InputDevice device) {
-    const std::string& input_name = recomp::get_input_enum_name(input);
-    nlohmann::json& out_array = out[input_name];
-    out_array = nlohmann::json::array();
-    for (size_t binding_index = 0; binding_index < recomp::bindings_per_input; binding_index++) {
-        out_array[binding_index] = recomp::get_input_binding(input, binding_index, device);
-    }
-};
-
 bool save_controls_config(const std::filesystem::path& path) {
     nlohmann::json config_json{};
-
-    config_json["keyboard"] = {};
-    config_json["controller"] = {};
-
-    for (size_t i = 0; i < recomp::get_num_inputs(); i++) {
-        recomp::GameInput cur_input = static_cast<recomp::GameInput>(i);
-
-        add_input_bindings(config_json["keyboard"], cur_input, recomp::InputDevice::Keyboard);
-        add_input_bindings(config_json["controller"], cur_input, recomp::InputDevice::Controller);
-    }
+    config_json["keyboard"] = recomp::controls::serialize_device_bindings(
+        recomp::InputDevice::Keyboard, recomp::get_num_inputs(),
+        [](recomp::GameInput input) -> const std::string& { return recomp::get_input_enum_name(input); },
+        [](recomp::GameInput input, size_t slot, recomp::InputDevice device) -> const recomp::InputField& {
+            return recomp::get_input_binding(input, slot, device);
+        });
+    config_json["controller"] = recomp::controls::serialize_device_bindings(
+        recomp::InputDevice::Controller, recomp::get_num_inputs(),
+        [](recomp::GameInput input) -> const std::string& { return recomp::get_input_enum_name(input); },
+        [](recomp::GameInput input, size_t slot, recomp::InputDevice device) -> const recomp::InputField& {
+            return recomp::get_input_binding(input, slot, device);
+        });
 
     return save_json_with_backups(path, config_json);
 }
 
 bool load_input_device_from_json(const nlohmann::json& config_json, recomp::InputDevice device, const std::string& key) {
-    // Check if the json object for the given key exists.
-    auto find_it = config_json.find(key);
-    if (find_it == config_json.end()) {
-        return false;
-    }
-
-    const nlohmann::json& mappings_json = *find_it;
-
-    for (size_t i = 0; i < recomp::get_num_inputs(); i++) {
-        recomp::GameInput cur_input = static_cast<recomp::GameInput>(i);
-        const std::string& input_name = recomp::get_input_enum_name(cur_input);
-
-        // Check if the json object for the given input exists and that it's an array.
-        auto find_input_it = mappings_json.find(input_name);
-        if (find_input_it == mappings_json.end() || !find_input_it->is_array()) {
-            assign_mapping(
-                device,
-                cur_input,
-                recomp::get_default_mapping_for_input(
-                    device == recomp::InputDevice::Keyboard ?
-                    recomp::default_n64_keyboard_mappings :
-                    recomp::default_n64_controller_mappings,
-                    cur_input
-                )
-            );
-            continue;
-        }
-        const nlohmann::json& input_json = *find_input_it;
-
-        // Deserialize all the bindings from the json array (up to the max number of bindings per input).
-        for (size_t binding_index = 0; binding_index < std::min(recomp::bindings_per_input, input_json.size()); binding_index++) {
-            recomp::InputField cur_field{};
-            recomp::from_json(input_json[binding_index], cur_field);
-            recomp::set_input_binding(cur_input, binding_index, device, cur_field);
-        }
-    }
-
-    return true;
+    const recomp::DefaultN64Mappings& defaults = device == recomp::InputDevice::Keyboard ?
+        recomp::default_n64_keyboard_mappings : recomp::default_n64_controller_mappings;
+    return recomp::controls::load_device_bindings(
+        config_json, key, device, recomp::get_num_inputs(),
+        [](recomp::GameInput input) -> const std::string& { return recomp::get_input_enum_name(input); },
+        [&defaults](recomp::GameInput input) -> const std::vector<recomp::InputField>& {
+            return recomp::get_default_mapping_for_input(defaults, input);
+        },
+        [](recomp::GameInput input, size_t slot, recomp::InputDevice target_device, recomp::InputField value) {
+            recomp::set_input_binding(input, slot, target_device, value);
+        });
 }
 
 bool load_controls_config(const std::filesystem::path& path) {
@@ -529,4 +469,12 @@ void zelda64::save_config() {
     save_graphics_config(recomp_dir / graphics_filename);
     save_controls_config(recomp_dir / controls_filename);
     save_sound_config(recomp_dir / sound_filename);
+}
+
+void zelda64::reset_general_and_sound_settings() {
+    const bool confirm_quit = zelda64::get_confirm_before_quit();
+    set_general_settings_from_json({});
+    zelda64::set_confirm_before_quit(confirm_quit);
+    zelda64::reset_sound_settings();
+    zelda64::save_config();
 }

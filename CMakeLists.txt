@@ -5,6 +5,7 @@ if (APPLE)
 endif()
 
 project(Zelda64Recompiled LANGUAGES C CXX)
+include(CTest)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -204,7 +205,10 @@ set (SOURCES
 )
 
 if (APPLE)
-    list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/src/main/support_apple.mm)
+    list(APPEND SOURCES
+        ${CMAKE_SOURCE_DIR}/src/main/support_apple.mm
+        ${CMAKE_SOURCE_DIR}/src/main/macos_settings.mm
+    )
 endif()
 
 target_include_directories(Zelda64Recompiled PRIVATE
@@ -302,7 +306,7 @@ if (APPLE)
     set(THREADS_PREFER_PTHREAD_FLAG TRUE)
     find_package(Threads REQUIRED)
 
-    target_link_libraries(Zelda64Recompiled PRIVATE ${CMAKE_DL_LIBS} Threads::Threads SDL2::SDL2)
+    target_link_libraries(Zelda64Recompiled PRIVATE ${CMAKE_DL_LIBS} Threads::Threads SDL2::SDL2 "-framework AppKit")
 
     include(${CMAKE_SOURCE_DIR}/.github/macos/apple_bundle.cmake)
 endif()
@@ -408,5 +412,15 @@ endforeach()
 target_sources(Zelda64Recompiled PRIVATE ${GENERATED_NRM_SOURCES})
 
 target_sources(Zelda64Recompiled PRIVATE ${SOURCES})
+
+if (BUILD_TESTING)
+    add_executable(Zelda64SettingsTests tests/settings_tests.cpp)
+    target_include_directories(Zelda64SettingsTests PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/ultramodern/include
+        ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib
+    )
+    add_test(NAME Zelda64SettingsTests COMMAND Zelda64SettingsTests)
+endif()
 
 set_property(TARGET Zelda64Recompiled PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
