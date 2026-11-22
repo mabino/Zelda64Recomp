@@ -77,6 +77,9 @@ endif()
 
 # Post-build steps for macOS bundle
 add_custom_command(TARGET Zelda64Recompiled POST_BUILD
+    # Do not let a stale development marker switch this packaged app to portable paths.
+    COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_BINARY_DIR}/portable.txt
+
     # Copy and fix frameworks first
     COMMAND ${CMAKE_COMMAND} -D CMAKE_BUILD_TYPE=$<CONFIG> -D CMAKE_GENERATOR=${CMAKE_GENERATOR} -P ${CMAKE_SOURCE_DIR}/.github/macos/fixup_bundle.cmake
 
