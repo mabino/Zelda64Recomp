@@ -13,6 +13,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(ZELDA64_BUILD_TESTS_ONLY "Build only unit tests without requiring recompiled ROM sources" OFF)
+if (ZELDA64_BUILD_TESTS_ONLY)
+    if (BUILD_TESTING)
+        add_executable(Zelda64SettingsTests tests/settings_tests.cpp)
+        target_include_directories(Zelda64SettingsTests PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/ultramodern/include
+            ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib
+        )
+        add_test(NAME Zelda64SettingsTests COMMAND Zelda64SettingsTests)
+    endif()
+    return()
+endif()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-everything /W4")
 endif()
